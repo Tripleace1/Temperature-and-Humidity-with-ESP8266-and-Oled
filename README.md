@@ -1,1 +1,2 @@
 # Temperature-and-Humidity-with-ESP8266-and-Oled
+Temperature and Humidity with ESP8266 and OLED Display using DHT11, along with Web Server Integration: This project involves using an ESP8266 microcontroller to gather temperature and humidity data from a sensor. The collected data is then displayed on an OLED screen for local visualization. Additionally, the project includes setting up a web server on the ESP8266, allowing users to access real-time temperature and humidity information remotely through a web browser
