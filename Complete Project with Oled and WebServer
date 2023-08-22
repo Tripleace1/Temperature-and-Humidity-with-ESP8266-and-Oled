@@ -1,0 +1,226 @@
+ 22#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h>
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <Hash.h>
+#include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+
+// Replace with your network credentials
+const char* ssid = "projects";
+const char* password = "projects";
+
+#define DHTPIN 5        // dht11 is connected to NodeMCU pin D1 (DPIO5)
+#define DHTTYPE DHT11   // defining the type of DHT sensor to the library
+#define TFT_RST   2    // TFT RST pin is connected to NodeMCU pin D4 (GPIO2)
+#define TFT_CS    0    // TFT CS  pin is connected to NodeMCU pin D3 (GPIO0)
+#define TFT_DC    4     // TFT DC  pin is connected to NodeMCU pin D2 (GPIO4)
+
+
+// initializing ST7735 TFT library with hardware SPI module
+// SCK (CLK) ---> NodeMCU pin D5 (GPIO14)
+// SDA or MOSI(DIN) ---> NodeMCU pin D7 (GPIO132
+
+DHT dht(DHTPIN, DHTTYPE);
+
+float t = 0.0;      // initial temperature data to be read from the dht
+float h = 0.0;        // initial humidity  data to be read from the dht
+float p = 3.1415926;
+
+unsigned long previousMillis = 0;
+const long interval = 2000;     //intervals of reading data
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+  <style>
+    html {
+      font-family: Arial, sans-serif;
+      display: inline-block;
+      margin: 0px auto;
+      text-align: center;
+      background-color: #f2f2f2;
+    }
+    h2 {
+      font-size: 3.5rem;
+      color: #333;
+      margin-top: 20px;
+    }
+    p {
+      font-size: 2.5rem;
+      color: #555;
+    }
+    .units {
+      font-size: 1.2rem;
+      color: #777;
+    }
+    .dht-labels {
+      font-size: 1.8rem;
+      vertical-align: middle;
+      padding-bottom: 15px;
+      color: #444;
+    }
+    #temperature, #humidity {
+      font-size: 3.5rem;
+      color: #007BFF;
+    }
+    i {
+      font-size: 2.5rem;
+    }
+    #lecturer {
+      font-size: 1.5rem;
+      color: #777;
+      margin-top: 30px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Group 6 Project</h2>
+  <p>
+    <i class="fas fa-thermometer-half" style="color:#FF5733;"></i>
+    <span class="dht-labels">Temperature</span>
+    <span id="temperature">%TEMPERATURE%</span>
+    <sup class="units">&deg;C</sup>
+  </p>
+  <p>
+    <i class="fas fa-tint" style="color:#33AFFF;"></i>
+    <span class="dht-labels">Humidity</span>
+    <span id="humidity">%HUMIDITY%</span>
+    <sup class="units">%</sup>
+  </p>
+  <p id="lecturer">Lecturer: Dr. Folorunso</p>
+</body>
+<script>
+  setInterval(function ( ) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+        document.getElementById("temperature").innerHTML = this.responseText;
+      }
+    };
+    xhttp.open("GET", "/temperature", true);
+    xhttp.send();
+  }, 2000  ;
+
+  setInterval(function ( ) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+        document.getElementById("humidity").innerHTML = this.responseText;
+      }
+    };
+    xhttp.open("GET", "/humidity", true);
+    xhttp.send();
+  }, 10000 ) ;
+</script>
+</html>)
+</html>)rawliteral";
+
+String processor(const String& var) {
+  if (var == "TEMPERATURE") {
+    return String(t);
+  } else if (var == "HUMIDITY") {
+    return String(h);
+  }
+  return String();
+}
+
+AsyncWebServer server(80);
+
+// OLED setup
+#define TFT_RST 2
+#define TFT_DC 4
+#define TFT_CS 0
+
+Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
+
+void setup() {
+  // OLED initialization
+  tft.initR(INITR_BLACKTAB);      // Init ST7735S chip, black tab
+  uint16_t time = millis();
+  tft.fillScreen(ST7735_BLACK);
+  time = millis() - time;
+  delay(500);
+
+
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  Serial.println("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println(".");
+  }
+// OLED screen clear and print initial message
+  tft.initR(INITR_BLACKTAB);
+  tft.fillScreen(ST7735_BLACK);
+  tft.setTextColor(ST7735_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(0, 0);
+  tft.println("   Group 6 Project");
+
+  dht.begin();
+  // Set up web server
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/html", index_html, processor);
+  });
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/plain", String(t).c_str());
+  });
+  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/plain", String(h).c_str());
+  });
+  server.begin();
+
+  
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    float newT = dht.readTemperature();
+    if (isnan(newT)) {
+      Serial.println("Failed to read temperature from DHT sensor!");
+    } else {
+      t = newT;
+      Serial.println(t);
+    }
+
+    float newH = dht.readHumidity();
+    if (isnan(newH)) {
+      Serial.println("Failed to read humidity from DHT sensor!");
+    } else {
+      h = newH;
+      Serial.println(h);
+    }
+  }
+
+  // Update OLED display
+    tft.setCursor(0, 0);
+  tft.println("   Group 6 Project");
+  tft.setCursor(0, 30);
+  tft.setTextColor(ST7735_YELLOW);
+  tft.setTextSize(2);
+  tft.print("Temp: ");
+  tft.print(t);
+  //tft.println(" C");
+  tft.setCursor(0, 60);
+  tft.setTextColor(ST7735_GREEN);
+  tft.print("Humidity: ");
+  tft.print (h);
+  //tft.println("%");
+
+
+  tft.setCursor(0, 120);
+  tft.setTextColor(ST7735_CYAN);
+  tft.setTextSize(1);
+  tft.print("Lecturer: Dr. Talha");
+  delay(2000);
+  tft.fillScreen(ST7735_BLACK);
+}
